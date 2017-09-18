@@ -169,7 +169,6 @@ class LdaSampler(object):
                     old_topic = self.topics[(doc, i)]
                     self.cooccur_doc_topic[doc, old_topic] -= 1
                     self.number_words_per_doc[doc] -= 1
-                    # self.cooccur_topic_word[old_topic, word] -= 1
                     self.occurrence_topic[old_topic] -= 1
 
 
@@ -181,7 +180,6 @@ class LdaSampler(object):
 
                     self.cooccur_doc_topic[doc, new_topic] += 1
                     self.number_words_per_doc[doc] += 1
-                    # self.cooccur_topic_word[new_topic, word] += 1
                     self.occurrence_topic[new_topic] += 1
                     self.topics[(doc, i)] = new_topic
             if it >= burn_in:

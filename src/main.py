@@ -4,7 +4,7 @@ from termcolor import colored
 import numpy as np
 from lda import *
 from at import *
-from dadt import * 
+from dadt import *
 import math
 
 
@@ -88,6 +88,14 @@ for doc, content in test_docs_content.items():
 vocab = list(vocab)
 lookupvocab = dict([(word, index) for (index, word) in enumerate(vocab)])
 
+stopwords = []
+stopfile = open("../data/germanST.txt")
+for line in stopfile:
+    line = line.strip()
+    stopwords.append(line)
+stopfile.close()
+print(stopwords)
+
 info('Building BOW representation')
 matrix = np.zeros((len(docs_content), len(vocab)))
 
@@ -149,22 +157,29 @@ def runAT():
 
 def runDADT():
     # set parameters
-    number_topics = 2
+    number_atopics = 5
+    number_dtopics = 10
     burn_in = 50  # 0
-    alpha = 0.1
-    beta = 0.1
-    delta_A = 0.5
-    delta_D = 0.5
+    alpha_a = min(0.1, 5/number_atopics)
+    alpha_d = min(0.1, 5/number_dtopics)
+    eta = 0
+    epsilon = 0.009
+    delta_A = 4.889
+    delta_D = 1.222
     samples = 5
-    spacing = 10  # 100
+    spacing = 2  # 100
+    beta_d = 0.1
+    beta_a = 0.1
 
+    # beta_a = [0.01 + epsilon if word in stopwords else 0.01 for word in ]
+    # [a if a else 2 for a in [0,1,0,3]]
+    # beta_d = []
 
     info('Starting!')
-    # def learn(matrix, doc_authors, num_dtopics, num_atopics, num_authors, alpha_a, beta_a, alpha_d, beta_d, eta, delta_A, delta_D, burn_in, samples, spacing):
-    theta, phi, likelihood = learn(matrix, doc_authors, 10, 10, len(author_ids), alpha, beta, alpha, beta, 0, delta_A, delta_D, burn_in, samples, spacing)
-    print('theta: ', theta)
-    print('phi: ', phi)
-    print('likelihood: ', likelihood)
+    (atopic_phi_sampled, atopic_theta_sampled, dtopic_phi_sampled, dtopic_theta_sampled) = learn(matrix, vocab, doc_authors, number_dtopics, number_atopics, len(author_ids), alpha_a, beta_a, alpha_d, beta_d, eta, delta_A, delta_D, burn_in, samples, spacing)
+    # print('theta: ', theta)
+    # print('phi: ', phi)
+    # print('likelihood: ', likelihood)
 
     # for topic in range(number_topics):
     #     words = {i : phi[topic, i] for i in range(len(vocab))}
