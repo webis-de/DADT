@@ -94,9 +94,9 @@ for line in stopfile:
     line = line.strip()
     stopwords.append(line)
 stopfile.close()
-print(stopwords)
 
 info('Building BOW representation')
+
 matrix = np.zeros((len(docs_content), len(vocab)))
 
 test_matrix = np.zeros((len(test_docs_content), len(vocab)))
@@ -157,38 +157,31 @@ def runAT():
 
 def runDADT():
     # set parameters
-    number_atopics = 5
-    number_dtopics = 10
-    burn_in = 50  # 0
+    number_atopics = 150
+    number_dtopics = 50
+    burn_in = 1000  # 0
     alpha_a = min(0.1, 5/number_atopics)
     alpha_d = min(0.1, 5/number_dtopics)
     eta = 0
     epsilon = 0.009
     delta_A = 4.889
     delta_D = 1.222
-    samples = 5
-    spacing = 2  # 100
-    beta_d = 0.1
-    beta_a = 0.1
+    samples = 8
+    spacing = 100
+    test_samples = 10
+    test_burn_in = 10
+    test_spacing = 10
 
-    # beta_a = [0.01 + epsilon if word in stopwords else 0.01 for word in ]
-    # [a if a else 2 for a in [0,1,0,3]]
-    # beta_d = []
+    beta_a = [0.01 + epsilon if word in stopwords else 0.01 for word in vocab]
+    beta_d = [0.01 - epsilon if word in stopwords else 0.01 for word in vocab]
 
-    info('Starting!')
+    beta_a = np.array(beta_a)
+    beta_d = np.array(beta_d)
+
+    print('Starting!')
     (atopic_phi_sampled, atopic_theta_sampled, dtopic_phi_sampled, dtopic_theta_sampled) = learn(matrix, vocab, doc_authors, number_dtopics, number_atopics, len(author_ids), alpha_a, beta_a, alpha_d, beta_d, eta, delta_A, delta_D, burn_in, samples, spacing)
-    # print('theta: ', theta)
-    # print('phi: ', phi)
-    # print('likelihood: ', likelihood)
 
-    # for topic in range(number_topics):
-    #     words = {i : phi[topic, i] for i in range(len(vocab))}
-    #     sorted_words = sorted(words, key=words.get)
-    #     print('Topic ', topic)
-    #     for i in range(10):
-    #         print(vocab[sorted_words[i]])
-
-
+    print("Testing")
 
 # runLDA()
 # runAT()
