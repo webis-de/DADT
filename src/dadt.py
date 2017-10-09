@@ -45,6 +45,31 @@ def dtopic_theta(cooccurrence_doc_dtopic, alpha):
     theta /= np.sum(theta, axis=1)[:, np.newaxis]
     return theta
 
+def atopic_phi(cooccurrence_atopic_word, beta):
+    phi = (cooccurrence_atopic_word + beta)
+    phi /= np.sum(phi, axis=1)[:, np.newaxis]
+    return phi
+
+def atopic_theta(cooccurrence_author_atopic, alpha):
+    theta = cooccurrence_author_atopic + alpha
+    theta /= np.sum(theta, axis=1)[:, np.newaxis]
+    return theta
+
+def pi(delta_a, delta_d, num_dwords_per_doc, num_awords_per_doc):
+    pi = delta_a + num_awords_per_doc
+    pi /= (delta_d + delta_a + (num_dwords_per_doc + num_awords_per_doc))
+    return pi
+
+def chi(eta, doc_authors,num_authors):
+    num_docs_per_author = np.zeros((num_authors))
+    for doc, authors in doc_authors.items():
+        for author in authors:
+            num_docs_per_author[author] += 1
+
+    chi = eta + num_docs_per_author
+    chi /= np.sum(chi)
+    return chi
+
 def sample_topic(doc, word, num_dtopics, doc_authors, cooccurrence_atopic_word, occurrence_atopic, cooccurrence_author_atopic, occurrence_author, num_atopics, num_awords_per_doc, cooccurrence_dtopic_word, occurrence_dtopic, cooccurrence_doc_dtopic, num_dwords_per_doc, alpha_a, beta_a, delta_a, alpha_d, beta_d, delta_d):
     authors = doc_authors[doc]
 
@@ -95,20 +120,9 @@ def sample_topic(doc, word, num_dtopics, doc_authors, cooccurrence_atopic_word, 
         new_atopic = idx % num_atopics
         return (not is_dtopic, new_author, new_atopic)
 
-
-def atopic_phi(cooccurrence_atopic_word, beta):
-    phi = (cooccurrence_atopic_word + beta)
-    phi /= np.sum(phi, axis=1)[:, np.newaxis]
-    return phi
-
-def atopic_theta(cooccurrence_author_atopic, alpha):
-    theta = cooccurrence_author_atopic + alpha
-    theta /= np.sum(theta, axis=1)[:, np.newaxis]
-    return theta
-
-def learn(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alpha_a, beta_a, alpha_d, beta_d, eta, delta_a, delta_d, burn_in, samples, spacing):
+def train(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alpha_a, beta_a, alpha_d, beta_d, eta, delta_a, delta_d, burn_in, samples, spacing):
     num_docs, num_words = matrix.shape
-
+    chi_sampled = chi(eta, doc_authors,num_authors)
     # Initialize matricies
     cooccurrence_dtopic_word = np.zeros((num_dtopics, num_words))
     cooccurrence_atopic_word = np.zeros((num_atopics, num_words))
@@ -155,10 +169,12 @@ def learn(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alp
     taken_samples = 0
 
     it = 0  # iterations
-    atopic_theta_sampled = 0;
-    atopic_phi_sampled = 0;
-    dtopic_theta_sampled = 0;
-    dtopic_phi_sampled = 0;
+    atopic_theta_sampled = 0
+    atopic_phi_sampled = 0
+    dtopic_theta_sampled = 0
+    dtopic_phi_sampled = 0
+    pi_sampled = 0
+
     while taken_samples < samples:
         # print('Iteration ', it)
         for doc in range(num_docs):  # all documents
@@ -204,6 +220,7 @@ def learn(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alp
                 atopic_theta_sampled += atopic_theta(cooccurrence_author_atopic, alpha_a)
                 dtopic_phi_sampled += dtopic_phi(cooccurrence_dtopic_word, beta_d)
                 dtopic_theta_sampled += dtopic_theta(cooccurrence_doc_dtopic, alpha_d)
+                pi_sampled += pi(delta_a, delta_d, num_dwords_per_doc, num_awords_per_doc)
                 taken_samples += 1
 
         info ("\n\nIteration %s" % it)
@@ -234,10 +251,150 @@ def learn(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alp
     atopic_theta_sampled /= taken_samples
     dtopic_phi_sampled /= taken_samples
     dtopic_theta_sampled /= taken_samples
+    pi_sampled /= taken_samples
 
-    return(atopic_phi_sampled, atopic_theta_sampled, dtopic_phi_sampled, dtopic_theta_sampled)
+    return(atopic_phi_sampled, atopic_theta_sampled, dtopic_phi_sampled, dtopic_theta_sampled, pi_sampled, chi_sampled)
 
 
-def classify(matrix, burn_in, samples, spacing, alpha_a, alpha_d, beta_a, beta_d, eta, delta_a, delta_d):
-    print("error: not yet implemented")
-    return [0]
+def classify(matrix, chains, burn_in, samples, spacing, num_dtopics, num_atopics, alpha_a, alpha_d, beta_a, beta_d, eta, delta_a, delta_d, dtopic_phi_sampled, atopic_phi_sampled):
+    num_docs, num_words = matrix.shape
+    atopic_theta_return = 0
+    dtopic_theta_return = 0
+    pi_return = 0
+    author = 0
+    old_author = 0
+    new_author = 0
+    for c in range(chains):
+        # Initialize matrices
+        cooccurrence_author_atopic = np.zeros((1, num_atopics))
+        cooccurrence_doc_dtopic = np.zeros((num_docs, num_dtopics))
+
+        occurrence_atopic = np.zeros((num_atopics))
+        occurrence_dtopic = np.zeros((num_dtopics))
+        occurrence_author = 0
+
+        num_dwords_per_doc = np.zeros((num_docs))
+        num_awords_per_doc = np.zeros((num_docs))
+
+        document_atopic_dtopic_ratio = np.zeros((num_docs))
+        document_word_topic = {}  # index : (doc, word-index) value: (1 for atopic 0 for dtopic, topic)
+
+        for doc in range(num_docs):
+            document_atopic_dtopic_ratio[doc] = np.random.beta(delta_a, delta_d)
+            # i is a number between 0 and doc_length-1
+            # w is a number between 0 and vocab_size-1
+            for i, word in enumerate(word_indices(matrix[doc, :])):
+                # choose an arbitrary topic as first topic for word i
+                is_atopic = np.random.binomial(1, document_atopic_dtopic_ratio[doc])
+                if (is_atopic):
+                    atopic = np.random.randint(num_atopics)
+                    occurrence_atopic[atopic] += 1
+                    occurrence_author += 1
+                    document_word_topic[(doc, i)] = (is_atopic, atopic)
+                    cooccurrence_author_atopic[(author, atopic)] += 1
+                    num_awords_per_doc[doc] += 1
+                else:
+                    dtopic = np.random.randint(num_dtopics)
+                    cooccurrence_doc_dtopic[(doc, dtopic)] += 1
+                    occurrence_dtopic[dtopic] += 1
+                    num_dwords_per_doc[doc] += 1
+                    document_word_topic[(doc, i)] = (is_atopic, dtopic)
+
+        taken_samples = 0
+
+        it = 0  # iterations
+        atopic_theta_sampled = 0
+        dtopic_theta_sampled = 0
+        pi_sampled = 0
+
+        while taken_samples < samples:
+            print('Iteration ', it)
+            for doc in range(num_docs):  # all documents
+                for i, word in enumerate(word_indices(matrix[doc, :])):
+
+                    old_is_atopic, old_topic = document_word_topic[(doc, i)]
+
+                    if (old_is_atopic):
+                        cooccurrence_author_atopic[(old_author, old_topic)] -= 1
+                        occurrence_atopic[old_topic] -= 1
+                        num_awords_per_doc[doc] -= 1
+                    else:
+                        cooccurrence_doc_dtopic[(doc, old_topic)] -= 1
+                        occurrence_dtopic[old_topic] -= 1
+                        num_dwords_per_doc[doc] -= 1
+
+                    document_dtopics = (cooccurrence_doc_dtopic[doc, :] + alpha_d) / \
+                                      (num_dwords_per_doc[doc] + alpha_d * num_dtopics)
+
+                    distribution_d = (delta_d + num_dwords_per_doc[doc]) * document_dtopics * dtopic_phi_sampled[:, word]
+
+                    # normalize to obtain probabilities
+                    distribution_d /= np.sum(distribution_d)
+
+                    while np.sum(distribution_d) > 1.0:
+                        distribution_d = distribution_d * 0.999999999999999 #dirty hack because of floating point errors
+
+                    author_atopics = (cooccurrence_author_atopic[0, :] + alpha_a) / \
+                                    (occurrence_author + alpha_a * num_atopics)
+
+                    distribution_a = (delta_a + num_awords_per_doc[doc]) * author_atopics * atopic_phi_sampled[:, word]
+
+                    # normalize to obtain probabilities
+                    distribution_a /= np.sum(distribution_a)
+
+                    while np.sum(distribution_a) > 1.0:
+                        distribution_a = distribution_a * 0.999999999999999 #dirty hack because of floating point errors
+
+                    distribution = np.concatenate((distribution_d, distribution_a))
+                    distribution /= np.sum(distribution)
+
+                    while True:
+                        try:
+                             idx = np.random.multinomial(1, distribution).argmax()
+                             break
+                        except:
+                             distribution = distribution * 0.999999999999999 #dirty hack because of floating point errors
+
+
+                    # idx = np.random.multinomial(1, distribution).argmax()
+
+                    is_dtopic = idx < num_dtopics
+
+                    if is_dtopic:
+                        new_dtopic = idx
+                        cooccurrence_doc_dtopic[(doc, new_dtopic)] += 1
+                        occurrence_dtopic[new_dtopic] += 1
+                        num_dwords_per_doc[doc] += 1
+                        document_word_topic[(doc, i)] = (0, new_dtopic)
+                    else:
+                        new_atopic = idx - num_dtopics
+                        cooccurrence_author_atopic[(new_author, new_atopic)] += 1
+                        occurrence_atopic[new_atopic] += 1
+                        num_awords_per_doc[doc] += 1
+                        document_word_topic[(doc, i)] = (1, new_atopic)
+
+            if it >= burn_in:
+                it_after_burn_in = it - burn_in
+                if (it_after_burn_in % spacing) == 0:
+                    print('    Sampling!')
+                    atopic_theta_sampled += atopic_theta(cooccurrence_author_atopic, alpha_a)
+                    dtopic_theta_sampled += dtopic_theta(cooccurrence_doc_dtopic, alpha_d)
+                    pi_sampled += pi(delta_a, delta_d, num_dwords_per_doc, num_awords_per_doc)
+                    taken_samples += 1
+
+
+            it += 1
+
+        atopic_theta_sampled /= taken_samples
+        dtopic_theta_sampled /= taken_samples
+        pi_sampled /= taken_samples
+
+        atopic_theta_return += atopic_theta_sampled
+        dtopic_theta_return += dtopic_theta_sampled
+        pi_return += pi_sampled
+
+    atopic_theta_return /= chains
+    dtopic_theta_return /= chains
+    pi_return /= chains
+
+    return(atopic_theta_return, dtopic_theta_return, pi_return)

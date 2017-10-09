@@ -113,6 +113,7 @@ class LdaSampler(object):
         Run the Gibbs sampler.
         """
         n_docs, vocab_size = matrix.shape
+
         self._initialize(matrix)
         theta = 0
         phi = 0
@@ -145,53 +146,52 @@ class LdaSampler(object):
                     phi += self.phi()
                     taken_samples += 1
             it += 1
-            print('    Log Likelihodd: ', self.loglikelihood())
+            print('    Log Likelihood: ', self.loglikelihood())
 
-        theta /= taken_samples;
-        phi /= taken_samples;
+        theta /= taken_samples
+        phi /= taken_samples
+
         return (theta, phi, self.loglikelihood())
 
-    def test(self, matrix, phi, burn_in, samples, spacing):
-        """
-        Run the Gibbs sampler.
-        """
+    def classify(self, matrix, phi, burn_in, samples, spacing, chains):
         n_docs, vocab_size = matrix.shape
-        self._initialize(matrix)
-        theta = 0
-        # phi = 0
-        taken_samples = 0
+        thetas = 0
+        for c in range(chains):
+            self._initialize(matrix)
+            theta = 0
+            taken_samples = 0
 
-        it = 0  # iterations
-        while taken_samples < samples:
-            print('Iteration ', it)
-            for doc in range(n_docs):  # all documents
-                for i, word in enumerate(word_indices(matrix[doc, :])):  # 1 3, 2 3, 3 3, 4 3, 5 4, 6 4, ...
-                    old_topic = self.topics[(doc, i)]
-                    self.cooccur_doc_topic[doc, old_topic] -= 1
-                    self.number_words_per_doc[doc] -= 1
-                    self.occurrence_topic[old_topic] -= 1
+            it = 0  # iterations
+            while taken_samples < samples:
+                print('Iteration ', it)
+                for doc in range(n_docs):  # all documents
+                    for i, word in enumerate(word_indices(matrix[doc, :])):  # 1 3, 2 3, 3 3, 4 3, 5 4, 6 4, ...
+                        old_topic = self.topics[(doc, i)]
+                        self.cooccur_doc_topic[doc, old_topic] -= 1
+                        self.number_words_per_doc[doc] -= 1
+                        self.occurrence_topic[old_topic] -= 1
 
+                        distribution = ((self.cooccur_doc_topic[doc, :] + self.alpha) / \
+                                        (self.number_words_per_doc[doc] + self.alpha * self.n_topics) * phi[:, word])
+                        distribution /= np.sum(distribution)
+                        new_topic = sample_index(distribution)
 
-                    distribution = (self.cooccur_doc_topic[doc, :] + self.alpha) / \
-                                    (self.number_words_per_doc[doc] + self.alpha * self.n_topics) * \
-                                    phi
+                        self.cooccur_doc_topic[doc, new_topic] += 1
+                        self.number_words_per_doc[doc] += 1
+                        self.occurrence_topic[new_topic] += 1
+                        self.topics[(doc, i)] = new_topic
+                if it >= burn_in:
+                    it_after_burn_in = it - burn_in
+                    if (it_after_burn_in % spacing) == 0:
+                        print('    Sampling!')
+                        theta += self.theta()
+                        phi += self.phi()
+                        taken_samples += 1
+                it += 1
+            print('    Log Likelihood: ', self.loglikelihood())
 
-                    new_topic = sample_index(distribution)
+            theta /= taken_samples
+            thetas += theta
 
-                    self.cooccur_doc_topic[doc, new_topic] += 1
-                    self.number_words_per_doc[doc] += 1
-                    self.occurrence_topic[new_topic] += 1
-                    self.topics[(doc, i)] = new_topic
-            if it >= burn_in:
-                it_after_burn_in = it - burn_in
-                if (it_after_burn_in % spacing) == 0:
-                    print('    Sampling!')
-                    theta += self.theta()
-                    phi += self.phi()
-                    taken_samples += 1
-            it += 1
-            print('    Log Likelihodd: ', self.loglikelihood())
-
-        theta /= taken_samples;
-        phi /= taken_samples;
-        return (theta, phi, self.loglikelihood())
+        theta /= chains
+        return (theta, self.loglikelihood())

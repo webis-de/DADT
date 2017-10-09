@@ -2,14 +2,6 @@
 import numpy as np
 from scipy.special import gammaln
 
-
-def sample_index(p):
-    """
-    Sample from the Multinomial distribution and return the sample index.
-    """
-    return np.random.multinomial(1, p).argmax()
-
-
 def word_indices(vec):
     """
     Turn a document vector of size vocab_size to a sequence
@@ -48,7 +40,7 @@ class AtSampler(object):
         self.cooccur_topic_word = np.zeros((self.n_topics, vocab_size))
         self.number_words_per_doc = np.zeros(n_docs)
         self.occurrence_topic = np.zeros(self.n_topics)
-        self.occurrence_author = np.zeros(self.n_authors)
+        self.num_words_per_author = np.zeros(self.n_authors)
         self.topics = {}
         self.authors = {}
 
@@ -63,7 +55,7 @@ class AtSampler(object):
                 self.number_words_per_doc[doc] += 1
                 self.cooccur_topic_word[topic, word] += 1
                 self.occurrence_topic[topic] += 1
-                self.occurrence_author[author] += 1
+                self.num_words_per_author[author] += 1
                 self.topics[(doc, i)] = topic
                 self.authors[(doc, i)] = author
 
@@ -73,10 +65,10 @@ class AtSampler(object):
         """
         vocab_size = self.cooccur_topic_word.shape[1]
 
-        wt = (self.cooccur_topic_word[:, word] + self.beta) / (self.occurrence_topic + self.beta * vocab_size)
 
-        at = (self.cooccur_author_topic[authors, :] + self.alpha) / (self.occurrence_author[authors].repeat(self.n_topics).reshape(len(authors),
+        at = (self.cooccur_author_topic[authors, :] + self.alpha) / (self.num_words_per_author[authors].repeat(self.n_topics).reshape(len(authors),
                                                                             self.n_topics) + self.alpha * self.n_topics)
+        wt = (self.cooccur_topic_word[:, word] + self.beta) / (self.occurrence_topic + self.beta * vocab_size)
 
         pdf = at * wt
         # reshape into a looong vector
@@ -89,24 +81,7 @@ class AtSampler(object):
         """
         Compute the likelihood that the model generated the data.
         """
-        # vocab_size = self.cooccur_topic_word.shape[1]
-        #
-        # print(self.cooccur_author_topic)
-        #
-        # ll = self.n_authors * gammaln(self.alpha * self.n_topics)
-        # ll -= self.n_authors * self.n_topics * gammaln(self.alpha)
-        # ll += self.n_topics * gammaln(self.beta * vocab_size)
-        # ll -= self.n_topics * vocab_size * gammaln(self.beta)
-        #
-        # for ai in range(self.n_authors):
-        #     ll += gammaln(self.cooccur_author_topic[ai, :]).sum() - gammaln(self.cooccur_author_topic[ai, :].sum())
-        # for ti in range(self.n_topics):
-        #     ll += gammaln(self.cooccur_topic_word[ti, :]).sum() - gammaln(self.cooccur_topic_word[ti, :].sum())
-        #
-        # return ll
 
-        # vocab_size = self.cooccur_topic_word.shape[1]
-        # n_docs = self.cooccur_doc_topic.shape[0]
         lik = 0
 
         for topic in range(self.n_topics):
@@ -132,7 +107,7 @@ class AtSampler(object):
         num /= np.sum(num, axis=1)[:, np.newaxis]
         return num
 
-    def run(self, doc_authors, matrix, burn_in, samples, spacing):
+    def train(self, doc_authors, matrix, burn_in, samples, spacing):
         """
         Run the Gibbs sampler.
         """
@@ -154,11 +129,8 @@ class AtSampler(object):
                     self.cooccur_topic_word[old_topic, word] -= 1
                     self.cooccur_author_topic[old_author, old_topic] -= 1
                     self.occurrence_topic[old_topic] -= 1
-                    self.occurrence_author[old_author] -= 1
+                    self.num_words_per_author[old_author] -= 1
                     self.number_words_per_doc[doc] -= 1
-
-                    #                     p_z = self._conditional_distribution(doc, word)
-                    #                     new_topic = sample_index(p_z)
 
                     distribution = self._conditional_distribution(self.doc_authors[doc], word)
                     idx = np.random.multinomial(1, distribution).argmax()
@@ -170,7 +142,7 @@ class AtSampler(object):
                     self.number_words_per_doc[doc] += 1
                     self.cooccur_topic_word[new_topic, word] += 1
                     self.occurrence_topic[new_topic] += 1
-                    self.occurrence_author[new_author] += 1
+                    self.num_words_per_author[new_author] += 1
                     self.topics[(doc, i)] = new_topic
                     self.authors[(doc, i)] = new_author
             if it >= burn_in:
@@ -186,7 +158,71 @@ class AtSampler(object):
         theta /= taken_samples
         phi /= taken_samples
 
-
-
         return (theta, phi, self.loglikelihood())
 
+    def classify(self, matrix, phi, burn_in, samples, spacing, chains):
+        n_docs, vocab_size = matrix.shape
+        author = 0
+        thetas = 0
+        for c in range(chains):
+            n_docs, vocab_size = matrix.shape
+
+            self.cooccur_author_topic = np.zeros((self.n_authors, self.n_topics))
+            self.number_words_per_doc = np.zeros(n_docs)
+            self.occurrence_topic = np.zeros(self.n_topics)
+            self.num_words_per_author = np.zeros(self.n_authors)
+            self.topics = {}
+
+            for doc in range(n_docs):
+                # i is a number between 0 and doc_length-1
+                # w is a number between 0 and vocab_size-1
+                for i, word in enumerate(word_indices(matrix[doc, :])):
+                    # choose an arbitrary topic as first topic for word i
+                    topic = np.random.randint(self.n_topics)
+                    self.cooccur_author_topic[author, topic] += 1
+                    self.number_words_per_doc[doc] += 1
+                    self.occurrence_topic[topic] += 1
+                    self.num_words_per_author[author] += 1
+                    self.topics[(doc, i)] = topic
+            theta = 0
+            taken_samples = 0
+            author = 0
+
+            it = 0  # iterations
+            while taken_samples < samples:
+                print('Iteration ', it)
+                for doc in range(n_docs):  # all documents
+                    for i, word in enumerate(word_indices(matrix[doc, :])):  # 1 3, 2 3, 3 3, 4 3, 5 4, 6 4, ...
+
+                        old_topic = self.topics[(doc, i)]
+
+                        self.cooccur_author_topic[author, old_topic] -= 1
+                        self.occurrence_topic[old_topic] -= 1
+                        self.number_words_per_doc[doc] -= 1
+
+                        distribution = ((self.cooccur_author_topic[0, :] + self.alpha) / \
+                                        (self.num_words_per_author[0] + self.alpha * self.n_topics) * phi[:, word])
+                        distribution /= np.sum(distribution)
+                        new_topic = np.random.multinomial(1, distribution).argmax()
+
+                        self.cooccur_author_topic[author, new_topic] += 1
+                        self.number_words_per_doc[doc] += 1
+                        self.occurrence_topic[new_topic] += 1
+                        self.topics[(doc, i)] = new_topic
+
+                if it >= burn_in:
+                    it_after_burn_in = it - burn_in
+                    if (it_after_burn_in % spacing) == 0:
+                        print('    Sampling!')
+                        theta += self.theta()
+                        phi += self.phi()
+                        taken_samples += 1
+                it += 1
+                print('    Log Likelihood: ', self.loglikelihood())
+
+            theta /= taken_samples
+            thetas += theta
+
+        theta /= chains
+        print(theta)
+        return (theta, self.loglikelihood())

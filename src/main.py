@@ -117,8 +117,9 @@ def runLDA():
     burn_in = 8  # 0
     alpha = 0.1
     beta = 0.1
-    samples = 8
+    samples = 4
     spacing = 2  # 100
+    chains = 2
 
     sampler = LdaSampler(number_topics, alpha, beta)
 
@@ -128,60 +129,60 @@ def runLDA():
     print('phi: ', phi)
     print('likelihood: ', likelihood)
 
-    # theta = sampler.test(test_matrix, phi, burn_in, samples, spacing)
-
+    theta, likelihood = sampler.classify(test_matrix, phi, burn_in, samples, spacing, chains)
+    print('theta: ', theta)
+    print('likelihood: ', likelihood)
 
 def runAT():
     # set parameters
-    number_topics = 2
-    burn_in = 50  # 0
+    number_topics = 4
+    burn_in = 8  # 0
     alpha = 0.1
     beta = 0.1
-    samples = 5
-    spacing = 10  # 100
+    samples = 4
+    spacing = 2  # 100
+    chains = 2
 
     sampler = AtSampler(number_topics, len(author_ids), alpha, beta)
 
     info('Starting!')
-    theta, phi, likelihood = sampler.run(doc_authors, matrix, burn_in, samples, spacing)
+    theta, phi, likelihood = sampler.train(doc_authors, matrix, burn_in, samples, spacing)
     print('theta: ', theta)
     print('phi: ', phi)
     print('likelihood: ', likelihood)
 
-    for topic in range(number_topics):
-        words = {i : phi[topic, i] for i in range(len(vocab))}
-        sorted_words = sorted(words, key=words.get)
-        print('Topic ', topic)
-        for i in range(10):
-            print(vocab[sorted_words[i]])
+    theta, likelihood = sampler.classify(test_matrix, phi, burn_in, samples, spacing, chains)
+    print('theta: ', theta)
+    print('likelihood: ', likelihood)
+
 
 def runDADT():
     # set parameters
-    number_atopics = 150
-    number_dtopics = 50
-    burn_in = 1000  # 0
-    alpha_a = min(0.1, 5/number_atopics)
-    alpha_d = min(0.1, 5/number_dtopics)
-    eta = 0
+    num_atopics = 15
+    num_dtopics = 5
+    burn_in = 1  # 1000
+    alpha_a = min(0.1, 5/num_atopics)
+    alpha_d = min(0.1, 5/num_dtopics)
+    eta = 1
     epsilon = 0.009
-    delta_A = 4.889
-    delta_D = 1.222
-    samples = 8
-    spacing = 100
+    delta_a = 4.889
+    delta_d = 1.222
+    samples = 2
+    spacing = 1 # 100
     test_samples = 10
     test_burn_in = 10
     test_spacing = 10
+    chains = 2
 
-    beta_a = [0.01 + epsilon if word in stopwords else 0.01 for word in vocab]
-    beta_d = [0.01 - epsilon if word in stopwords else 0.01 for word in vocab]
-
-    beta_a = np.array(beta_a)
-    beta_d = np.array(beta_d)
+    beta_a = np.array([0.01 + epsilon if word in stopwords else 0.01 for word in vocab])
+    beta_d = np.array([0.01 - epsilon if word in stopwords else 0.01 for word in vocab])
 
     print('Starting!')
-    (atopic_phi_sampled, atopic_theta_sampled, dtopic_phi_sampled, dtopic_theta_sampled) = learn(matrix, vocab, doc_authors, number_dtopics, number_atopics, len(author_ids), alpha_a, beta_a, alpha_d, beta_d, eta, delta_A, delta_D, burn_in, samples, spacing)
+    (atopic_phi_sampled, atopic_theta_sampled, dtopic_phi_sampled, dtopic_theta_sampled, pi_sampled, chi) = train(matrix, vocab, doc_authors, num_dtopics, num_atopics, len(author_ids), alpha_a, beta_a, alpha_d, beta_d, eta, delta_a, delta_d, burn_in, samples, spacing)
 
     print("Testing")
+
+    (dtopic_theta_test, atopic_theta_test, pi_test ) = classify(matrix, chains, test_burn_in, test_samples, test_spacing, num_dtopics, num_atopics, alpha_a, alpha_d, beta_a, beta_d, eta, delta_a, delta_d, dtopic_phi_sampled, atopic_phi_sampled)
 
 # runLDA()
 # runAT()
