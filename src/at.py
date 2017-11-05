@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 import numpy as np
-from scipy.special import gammaln
+from math import lgamma
+
+gammaln = np.vectorize(lgamma)
 
 def word_indices(vec):
     """
@@ -66,9 +68,17 @@ class AtSampler(object):
         vocab_size = self.cooccur_topic_word.shape[1]
 
 
-        at = (self.cooccur_author_topic[authors, :] + self.alpha) / (self.num_words_per_author[authors].repeat(self.n_topics).reshape(len(authors),
-                                                                            self.n_topics) + self.alpha * self.n_topics)
-        wt = (self.cooccur_topic_word[:, word] + self.beta) / (self.occurrence_topic + self.beta * vocab_size)
+        # at_complex = (self.cooccur_author_topic[authors, :] + self.alpha) / (self.num_words_per_author[authors].repeat(self.n_topics).reshape(len(authors),
+        #                                                                     self.n_topics) + self.alpha * self.n_topics)
+        at = (self.cooccur_author_topic[authors, :] + self.alpha)
+        at /= np.sum(at, axis=1)[:, np.newaxis]
+
+        # wt_complex = (self.cooccur_topic_word[:, word] + self.beta) / (self.occurrence_topic + self.beta * vocab_size)
+
+        wt = (self.cooccur_topic_word + self.beta)
+        wt /= np.sum(wt, axis=1)[:, np.newaxis]
+        wt = wt[:, word]
+
 
         pdf = at * wt
         # reshape into a looong vector
@@ -165,6 +175,7 @@ class AtSampler(object):
         author = 0
         thetas = 0
         for c in range(chains):
+            print("Chain ",c)
             n_docs, vocab_size = matrix.shape
 
             self.cooccur_author_topic = np.zeros((self.n_authors, self.n_topics))
@@ -190,7 +201,7 @@ class AtSampler(object):
 
             it = 0  # iterations
             while taken_samples < samples:
-                print('Iteration ', it)
+                print('  Iteration ', it)
                 for doc in range(n_docs):  # all documents
                     for i, word in enumerate(word_indices(matrix[doc, :])):  # 1 3, 2 3, 3 3, 4 3, 5 4, 6 4, ...
 
@@ -226,3 +237,124 @@ class AtSampler(object):
         theta /= chains
         print(theta)
         return (theta, self.loglikelihood())
+
+    def at_p(self, phi, theta, matrix):
+        n_docs, vocab_size = matrix.shape
+        candidate_probabilities = np.zeros((n_docs, self.n_authors))
+
+        for doc in range(n_docs):  # all documents
+            for candidate in range(self.n_authors):
+                text_prob = 0
+                for i, word in enumerate(word_indices(matrix[doc, :])):
+                    theta_vector = theta[candidate, :]
+                    phi_vector = phi[:, word]
+                    product =  np.dot(theta_vector, phi_vector)
+                    text_prob += np.log(product)
+
+                candidate_probabilities[doc, candidate] = text_prob
+
+        return np.argmax(candidate_probabilities, axis = 1)
+
+    def at_fa_p2(self, phi, theta_r, matrix, samples, burn_in, spacing):
+        n_docs, vocab_size = matrix.shape
+        candidate_probabilities = np.zeros((n_docs, self.n_authors))
+
+        CANDIDATE_AUTHOR = 0
+        FICTICIOUS_AUTHOR = 1
+
+        for candidate in range(self.n_authors):
+            cooccur_fic_author_topic = np.zeros(self.n_topics)
+            number_words_per_doc = np.zeros(n_docs)
+            occurrence_topic = np.zeros(self.n_topics)
+            num_words_of_fic_author = 0
+            topics = {}
+            authors = {}
+
+            for doc in range(n_docs):
+                # i is a number between 0 and doc_length-1
+                # w is a number between 0 and vocab_size-1
+                for i, word in enumerate(word_indices(matrix[doc, :])):
+                    # choose an arbitrary topic as first topic for word i
+                    topic = np.random.randint(self.n_topics)
+                    author = CANDIDATE_AUTHOR if np.random.randint(2) else FICTICIOUS_AUTHOR
+
+                    topics[(doc, i)] = topic
+                    authors[(doc, i)] = author
+
+                    if FICTICIOUS_AUTHOR:
+                        cooccur_fic_author_topic[topic] += 1
+                        occurrence_topic[topic] += 1
+                        number_words_per_doc[doc] += 1
+                        num_words_of_fic_author += 1
+
+            theta_fic = 0
+            taken_samples = 0
+
+            it = 0  # iterations
+            while taken_samples < samples:
+                print('Iteration ', it)
+                for doc in range(n_docs):  # all documents
+                    for i, word in enumerate(word_indices(matrix[doc, :])):  # 1 3, 2 3, 3 3, 4 3, 5 4, 6 4, ...
+
+                        old_topic = topics[(doc, i)]
+                        old_author = authors[(doc, i)]
+
+                        if old_author == FICTICIOUS_AUTHOR:
+                            cooccur_fic_author_topic[old_topic] -= 1
+                            occurrence_topic[old_topic] -= 1
+                            number_words_per_doc[doc] -= 1
+                            num_words_of_fic_author -= 1
+
+                        # vocab_size = self.cooccur_topic_word.shape[1]
+
+                        theta_fake = cooccur_fic_author_topic + self.alpha
+                        theta_fake /= theta_fake.sum()
+
+                        distribution_real = np.multiply(theta_r[candidate], phi[:, word])
+                        distribution_fake = np.multiply(theta_fake, phi[:, word])
+
+                        distribution = np.concatenate((distribution_real, distribution_fake))
+                        # normalize to obtain probabilities
+                        distribution /= distribution.sum()
+
+                        idx = np.random.multinomial(1, distribution).argmax()
+
+                        if idx >= self.n_topics:
+                            new_topic = idx - self.n_topics
+                            new_author = FICTICIOUS_AUTHOR
+
+                            cooccur_fic_author_topic[new_topic] += 1
+                            number_words_per_doc[doc] += 1
+                            occurrence_topic[new_topic] += 1
+                            num_words_of_fic_author += 1
+                        else:
+                            new_topic = idx
+                            new_author = CANDIDATE_AUTHOR
+
+                        topics[(doc, i)] = new_topic
+                        authors[(doc, i)] = new_author
+
+                if it >= burn_in:
+                    it_after_burn_in = it - burn_in
+                    if (it_after_burn_in % spacing) == 0:
+                        print('    Sampling!')
+                        theta_fic += theta_fake
+                        taken_samples += 1
+                it += 1
+
+            theta_fic = theta_fake / taken_samples
+
+            for doc in range(n_docs):  # all documents
+                text_prob = 0
+                for i, word in enumerate(word_indices(matrix[doc, :])):
+                    theta_vector = theta_r[candidate, :]
+                    phi_vector = phi[:, word]
+                    product_real =  np.dot(theta_vector, phi_vector)
+                    product_fic = np.dot(theta_fic, phi_vector)
+                    sum_prob = product_real + product_fic
+
+                    text_prob += np.log(sum_prob)
+
+                candidate_probabilities[doc, candidate] = text_prob
+
+        return np.argmax(candidate_probabilities, axis = 1)

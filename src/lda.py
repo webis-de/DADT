@@ -1,8 +1,7 @@
 import numpy as np
-import scipy as sp
-import scipy.misc
-from scipy.special import gammaln
+from math import lgamma
 
+gammaln = np.vectorize(lgamma)
 
 def sample_index(p):
     """
@@ -29,7 +28,7 @@ def log_multi_beta(alpha):
     return np.sum(gammaln(alpha)) - gammaln(np.sum(alpha))
 
 
-class LdaSampler(object):
+class LDA(object):
     def __init__(self, n_topics, alpha, beta):
         """
         n_topics: desired number of topics
@@ -70,9 +69,17 @@ class LdaSampler(object):
         left = (self.cooccur_topic_word[:, word] + self.beta) / \
                (self.occurrence_topic + self.beta * vocab_size)
 
+#         wt = (self.cooccur_topic_word + self.beta)
+#         wt /= np.sum(wt, axis=1)[:, np.newaxis]
+#         wt = wt[:, word]
+
         right = (self.cooccur_doc_topic[doc, :] + self.alpha) / \
                 (self.number_words_per_doc[doc] + self.alpha * self.n_topics)
 
+#         dt = (self.cooccur_doc_topic[doc, :] + self.alpha)
+#         dt /= np.sum(dt, axis=1)[:, np.newaxis]
+
+#         p_z = wt * dt
         p_z = left * right
         # normalize to obtain probabilities
         p_z /= np.sum(p_z)
