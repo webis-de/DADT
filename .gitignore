@@ -1,2 +1,4 @@
 data/
 src/run.bash
+*.idea
+src/__pycache__
