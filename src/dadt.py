@@ -59,9 +59,8 @@ def pi(delta_a, delta_d, num_dwords_per_doc, num_awords_per_doc):
 
 def chi(eta, doc_authors,num_authors):
     num_docs_per_author = np.zeros((num_authors))
-    for doc, authors in doc_authors.items():
-        for author in authors:
-            num_docs_per_author[author] += 1
+    for author in doc_authors:
+        num_docs_per_author[author] += 1
 
     chi = eta + num_docs_per_author
     chi /= np.sum(chi)
@@ -412,8 +411,6 @@ def classify(matrix, chains, burn_in, samples, spacing, num_dtopics, num_atopics
 def dadt_p(matrix, n_authors, phi_a, phi_d, theta_a, theta_d_test, pi_test, chi):
     n_docs, vocab_size = matrix.shape
     candidate_probabilities = np.zeros((n_docs, n_authors))
-    print(chi)
-
     for doc in range(n_docs):  # all documents
         for candidate in range(n_authors):
             text_prob = 0

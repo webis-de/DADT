@@ -172,7 +172,6 @@ class AtSampler(object):
 
     def classify(self, matrix, phi, burn_in, samples, spacing, chains):
         n_docs, vocab_size = matrix.shape
-        author = 0
         thetas = 0
         for c in range(chains):
             print("Chain ",c)
@@ -185,6 +184,7 @@ class AtSampler(object):
             self.topics = {}
 
             for doc in range(n_docs):
+                author = doc
                 # i is a number between 0 and doc_length-1
                 # w is a number between 0 and vocab_size-1
                 for i, word in enumerate(word_indices(matrix[doc, :])):
@@ -197,12 +197,12 @@ class AtSampler(object):
                     self.topics[(doc, i)] = topic
             theta = 0
             taken_samples = 0
-            author = 0
 
             it = 0  # iterations
             while taken_samples < samples:
                 print('  Iteration ', it)
                 for doc in range(n_docs):  # all documents
+                    author = doc
                     for i, word in enumerate(word_indices(matrix[doc, :])):  # 1 3, 2 3, 3 3, 4 3, 5 4, 6 4, ...
 
                         old_topic = self.topics[(doc, i)]
@@ -226,17 +226,14 @@ class AtSampler(object):
                     if (it_after_burn_in % spacing) == 0:
                         print('    Sampling!')
                         theta += self.theta()
-                        phi += self.phi()
                         taken_samples += 1
                 it += 1
-                print('    Log Likelihood: ', self.loglikelihood())
 
             theta /= taken_samples
             thetas += theta
 
         theta /= chains
-        print(theta)
-        return (theta, self.loglikelihood())
+        return (theta)
 
     def at_p(self, phi, theta, matrix):
         n_docs, vocab_size = matrix.shape
