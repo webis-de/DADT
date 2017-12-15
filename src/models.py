@@ -21,21 +21,29 @@ def add_fic_authors(doc_authors, n_authors):
 
     return(doc_authors_new, next_fa)
 
-def TOKEN_SVM(matrix, test_matrix, n_authors, doc_authors):
-    num_test_docs = test_matrix.shape[0]
-    svm_model = ll.train(sum(doc_authors, []), matrix.tolist(), '-c 4')
-    p_label, p_acc, p_val = ll.predict(np.random.rand(num_test_docs), test_matrix.tolist(), svm_model)
-    return p_label
+def TOKEN_SVM(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
+    n_docs = matrix.shape[0]
+    n_test_docs = test_matrix.shape[0]
+    matrix = matrix / np.sum(matrix, 1)[:,None]
+    test_matrix = test_matrix / np.sum(test_matrix, 1)[:,None]
 
-def LDA_SVM(matrix, test_matrix, n_authors, doc_authors):
+    svm_model = ll.train(sum(doc_authors, []), matrix.tolist(), '-c 4')
+    p_label, p_acc, p_val = ll.predict(np.random.rand(n_test_docs), test_matrix.tolist(), svm_model)
+
+    author_probs = np.zeros((n_test_docs, n_authors))
+    for doc, author in enumerate(p_label):
+        author_probs[doc,int(author)] = 1
+
+    return author_probs
+
+def LDA_SVM(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     # set parameters
     number_topics = 20
-    burn_in = 8  # 0
+    burn_in = 1000  # 0
     alpha = 0.1
     beta = 0.1
-    samples = 4
-    spacing = 2  # 100
-    chains = 2
+    samples = 8
+    spacing = 100
 
     num_test_docs = test_matrix.shape[0]
 
@@ -45,22 +53,30 @@ def LDA_SVM(matrix, test_matrix, n_authors, doc_authors):
     theta, phi, likelihood = sampler.train(matrix, burn_in, samples, spacing)
     print('likelihood: ', likelihood)
 
-    theta_test, likelihood = sampler.classify(test_matrix, phi, burn_in, samples, spacing, chains)
+    theta_test, likelihood = sampler.classify(test_matrix, phi, burn_in, samples, spacing)
     print('likelihood: ', likelihood)
 
-    svm_model = ll.train(sum(doc_authors, []), matrix.tolist(), '-c 4')
-    p_label, p_acc, p_val = ll.predict(np.random.rand(num_test_docs), theta_test.tolist(), svm_model)
-    return p_label
 
-def AT_SVM(matrix, test_matrix, n_authors, doc_authors):
+    theta = theta / np.sum(theta, 1)[:,None]
+    theta_test = theta_test / np.sum(theta_test, 1)[:,None]
+
+    svm_model = ll.train(sum(doc_authors, []), theta.tolist(), '-c 4')
+    p_label, p_acc, p_val = ll.predict(np.random.rand(num_test_docs), theta_test.tolist(), svm_model)
+    author_probs = np.zeros((n_test_docs, n_authors))
+    for doc, author in enumerate(p_label):
+        author_probs[doc,int(author)] = 1
+
+    return author_probs
+
+
+def AT_SVM(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     # set parameters
     number_topics = 4
-    burn_in = 2  # 0
+    burn_in = 1000  # 0
     alpha = 0.1
     beta = 0.1
-    samples = 2
-    spacing = 2  # 100
-    chains = 2
+    samples = 8
+    spacing = 100
 
     num_test_docs = test_matrix.shape[0]
 
@@ -74,46 +90,49 @@ def AT_SVM(matrix, test_matrix, n_authors, doc_authors):
 
     sampler.n_authors = num_test_docs
 
-    theta_test = sampler.classify(test_matrix, phi, burn_in, samples, spacing, chains)
+    theta_test = sampler.classify(test_matrix, phi, burn_in, samples, spacing)
     print('theta test: ', theta_test.shape)
     print('likelihood: ', likelihood)
 
+    theta = theta / np.sum(theta, 1)[:,None]
+    theta_test = theta_test / np.sum(theta_test, 1)[:,None]
+
     svm_model = ll.train([0,1], theta.tolist(), '-c 4')
     p_label, p_acc, p_val = ll.predict(np.random.rand(num_test_docs), theta_test.tolist(), svm_model)
+    author_probs = np.zeros((n_test_docs, n_authors))
+    for doc, author in enumerate(p_label):
+        author_probs[doc,int(author)] = 1
 
-    return p_label
+    return author_probs
 
-def AT_P(matrix, test_matrix, n_authors, doc_authors):
+def AT_P(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     # set parameters
-    number_topics = 4
-    burn_in = 5 # 0
+    number_topics = 400
+    burn_in = 1000
     alpha = 0.1
     beta = 0.1
-    samples = 1 # 0
-    spacing = 5  # 100
-    chains = 2
+    samples = 8
+    spacing = 100
 
     sampler = at.AtSampler(number_topics, n_authors, alpha, beta)
 
     print('Starting!')
-    theta, phi, likelihood = sampler.train(doc_authors, matrix, burn_in, samples, spacing)
-    print('theta: ', theta)
-    print('phi: ', phi)
-    print('likelihood: ', likelihood)
+    theta, phi = sampler.train(doc_authors, matrix, burn_in, samples, spacing)
+    print('theta: ', theta.shape)
+    print('phi: ', phi.shape)
 
-    authors = sampler.at_p(phi, theta, test_matrix)
+    author_probs = sampler.at_p(phi, theta, test_matrix)
 
-    return(authors)
+    return author_probs
 
-def AT_FA_SVM(matrix, test_matrix, n_authors, doc_authors):
+def AT_FA_SVM(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     # set parameters
     number_topics = 4
-    burn_in = 5  # 0
+    burn_in = 1000  # 0
     alpha = 0.1
     beta = 0.1
-    samples = 2
-    spacing = 2  # 100
-    chains = 2
+    samples = 8
+    spacing = 100
 
     num_test_docs = test_matrix.shape[0]
 
@@ -129,7 +148,7 @@ def AT_FA_SVM(matrix, test_matrix, n_authors, doc_authors):
 
     sampler.n_authors = num_test_docs
 
-    theta_test = sampler.classify(test_matrix, phi, burn_in, samples, spacing, chains)
+    theta_test = sampler.classify(test_matrix, phi, burn_in, samples, spacing)
     print('theta test:', theta_test.shape)
 
     num_training_docs = matrix.shape[0]
@@ -142,46 +161,51 @@ def AT_FA_SVM(matrix, test_matrix, n_authors, doc_authors):
     num_test_docs = test_matrix.shape[0]
     test_matrix = np.concatenate((theta_test, theta_test), axis=1)
 
-    svm_model = ll.train(sum(doc_authors, []), matrix.tolist(), '-c 4')
+
+    training_matrix = training_matrix / np.sum(training_matrix, 1)[:,None]
+    test_matrix = test_matrix / np.sum(test_matrix, 1)[:,None]
+
+    svm_model = ll.train(sum(doc_authors, []), training_matrix.tolist(), '-c 4')
     p_label, p_acc, p_val = ll.predict(np.random.rand(num_test_docs), test_matrix.tolist(), svm_model)
 
-    return p_label
+    author_probs = np.zeros((n_test_docs, n_authors))
+    for doc, author in enumerate(p_label):
+        author_probs[doc,int(author)] = 1
 
-def AT_FA_P1(matrix, test_matrix, n_authors, doc_authors):
+    return author_probs
+
+def AT_FA_P1(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     # set parameters
     number_topics = 4
-    burn_in = 2 # 0
+    burn_in = 1000 # 0
     alpha = 0.1
     beta = 0.1
-    samples = 2
-    spacing = 1  # 100
-    chains = 2
+    samples = 8
+    spacing = 100
 
     doc_authors_new, n_authors_new = add_fic_authors(doc_authors, n_authors)
 
     sampler = at.AtSampler(number_topics, n_authors_new, alpha, beta)
 
     print('Starting!')
-    theta, phi, likelihood = sampler.train(doc_authors_new, matrix, burn_in, samples, spacing)
+    theta, phi= sampler.train(doc_authors_new, matrix, burn_in, samples, spacing)
     print('theta: ', theta)
     print('phi: ', phi)
-    print('likelihood: ', likelihood)
 
     sampler.n_authors = n_authors
 
-    authors = sampler.at_p(phi, theta, test_matrix)
+    author_probs = sampler.at_p(phi, theta, test_matrix)
 
-    return(authors)
+    return(author_probs)
 
-def AT_FA_P2(matrix, test_matrix, n_authors, doc_authors):
+def AT_FA_P2(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     # set parameters
     number_topics = 4
-    burn_in = 2  # 0
+    burn_in = 1000  # 0
     alpha = 0.1
     beta = 0.1
-    samples = 2
-    spacing = 2  # 100
-    chains = 2
+    samples = 8
+    spacing = 100
 
     doc_authors_new, n_authors_new = add_fic_authors(doc_authors, n_authors)
 
@@ -197,25 +221,24 @@ def AT_FA_P2(matrix, test_matrix, n_authors, doc_authors):
 
     authors = sampler.at_fa_p2(phi, theta, test_matrix, samples, burn_in, spacing)
 
-    return(authors)
+    return(author_probs)
 
 def DADT_SVM(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     # set parameters
     num_atopics = 15
     num_dtopics = 5
-    burn_in = 1  # 1000
+    burn_in = 1000  # 1000
     alpha_a = min(0.1, 5/num_atopics)
     alpha_d = min(0.1, 5/num_dtopics)
     eta = 1
     epsilon = 0.009
     delta_a = 4.889
     delta_d = 1.222
-    samples = 2
-    spacing = 1 # 100
-    test_samples = 2#10
-    test_burn_in = 3#10
-    test_spacing = 2#10
-    chains = 1#2
+    samples = 8
+    spacing = 100
+    test_samples = 10
+    test_burn_in = 10
+    test_spacing = 1
 
     num_test_docs = test_matrix.shape[0]
 
@@ -227,7 +250,7 @@ def DADT_SVM(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
 
     print("Testing")
 
-    (dtopic_theta_test, atopic_theta_test, pi_test ) = dadt.classify(test_matrix, chains, test_burn_in, test_samples, test_spacing, num_dtopics, num_atopics, alpha_a, alpha_d, beta_a, beta_d, eta, delta_a, delta_d, dtopic_phi_sampled, atopic_phi_sampled)
+    (dtopic_theta_test, atopic_theta_test, pi_test ) = dadt.classify(test_matrix, test_burn_in, test_samples, test_spacing, num_dtopics, num_atopics, alpha_a, alpha_d, beta_a, beta_d, eta, delta_a, delta_d, dtopic_phi_sampled, atopic_phi_sampled)
 
     print("Main")
     num_training_docs = matrix.shape[0]
@@ -244,27 +267,35 @@ def DADT_SVM(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
         vector = np.concatenate((dtopic_theta_test[doc],atopic_theta_test[doc]))
         svm_test_matrix[doc] = vector
 
-    svm_model = ll.train(sum(doc_authors, []), matrix.tolist(), '-c 4')
+    training_matrix = training_matrix / np.sum(training_matrix, 1)[:,None]
+    svm_test_matrix = svm_test_matrix / np.sum(svm_test_matrix, 1)[:,None]
+
+    svm_model = ll.train(sum(doc_authors, []), training_matrix.tolist(), '-c 4')
     p_label, p_acc, p_val = ll.predict(np.random.rand(num_test_docs), svm_test_matrix.tolist(), svm_model)
-    return p_label
+
+    author_probs = np.zeros((n_test_docs, n_authors))
+    for doc, author in enumerate(p_label):
+        author_probs[doc,int(author)] = 1
+
+    return author_probs
+
 
 def DADT_P(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     # set parameters
-    num_atopics = 15
-    num_dtopics = 5
-    burn_in = 1  # 1000
+    num_dtopics = 50
+    num_atopics = 350
+    burn_in = 1000
     alpha_a = min(0.1, 5/num_atopics)
     alpha_d = min(0.1, 5/num_dtopics)
     eta = 1
     epsilon = 0.009
     delta_a = 4.889
     delta_d = 1.222
-    samples = 2
-    spacing = 1 # 100
-    test_samples = 2
-    test_burn_in = 3
-    test_spacing = 2
-    chains = 2
+    samples = 8
+    spacing = 100
+    test_samples = 10
+    test_burn_in = 10
+    test_spacing = 1
 
     beta_a = np.array([0.01 + epsilon if word in stopwords else 0.01 for word in vocab])
     beta_d = np.array([0.01 - epsilon if word in stopwords else 0.01 for word in vocab])
@@ -274,10 +305,12 @@ def DADT_P(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
 
     print("Classifying")
 
-    (atopic_theta_test, dtopic_theta_test, pi_test ) = dadt.classify(matrix, chains, test_burn_in, test_samples, test_spacing, num_dtopics, num_atopics, alpha_a, alpha_d, beta_a, beta_d, eta, delta_a, delta_d, dtopic_phi_sampled, atopic_phi_sampled)
+    (atopic_theta_test, dtopic_theta_test, pi_test ) = dadt.classify(test_matrix, test_burn_in, test_samples, test_spacing, num_dtopics, num_atopics, alpha_a, alpha_d, beta_a, beta_d, eta, delta_a, delta_d, dtopic_phi_sampled, atopic_phi_sampled)
 
     print("Deciding")
+    print(test_matrix.shape)
+    print(dtopic_theta_test.shape)
 
-    authors = dadt.dadt_p(test_matrix, n_authors, atopic_phi_sampled, dtopic_phi_sampled, atopic_theta_sampled, dtopic_theta_test, pi_test, chi)
+    author_probs = dadt.dadt_p(test_matrix, n_authors, atopic_phi_sampled, dtopic_phi_sampled, atopic_theta_sampled, dtopic_theta_test, pi_test, chi)
 
-    return(authors)
+    return(author_probs)
