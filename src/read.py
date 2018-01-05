@@ -6,6 +6,8 @@ import optparse
 import os.path
 import subprocess
 from multiprocessing import Pool
+import json
+from itertools import repeat
 
 class OpenNLP():
     def __init__(self, tool, path_opennlp, path_model):
@@ -100,9 +102,7 @@ def map_judgment(filename):
     contents = f.read()
     contents = re.sub(quotes, "", contents)
     contents = re.sub(numbers, "", contents)
-    print("preprocess now")
     contents = preprocess(contents)
-    print("preprocess done")
     new_filename = re.sub(fileregex, '\1\-\2\.txt', filename)
     outfile = open(destination_path + new_filename, 'w')
     outfile.write(content)
@@ -110,24 +110,52 @@ def map_judgment(filename):
     print(new_filename)
 
 def readpan11(source_path):
-    filenames = os.listdir(source_path)
+    filenames = os.listdir(source_path+'training/')
     with Pool(32) as p:
-        p.starmap(map_pan11_test, zip(filenames, repeat(source_path+'training/')))
+        p.starmap(map_pan11_train, zip(list(filenames), repeat(source_path+'training/')))
 
-def map_pan11_test(author, source):
+    # ground_file = open(source_path + 'ground-truth.json','r')
+    # ground_string = ground_file.read()
+    # ground_file.close()
+    # ground_json = json.loads(ground_string)
+    # ground_dict = ground_json['ground-truth']
+
+    # with Pool(32) as p:
+    #     p.starmap(map_pan11_test, zip(ground_dict, repeat(source_path)))
+
+def map_pan11_test(info, source_path):
     numbers_regex = r'\d+'
-    filenames = os.listdir(source_path)
-    candidate_number = re.search(numbers_regex, author)
+    author = info["true-author"]
+    filename = info["unknown-text"]
+    file = open(source_path + "unknown/" + info["unknown-text"], "r")
+    candidate_number = re.search(numbers_regex, author).group()
+    file_number = re.search(numbers_regex, filename).group()
+    contents = file.read()
+    file.close()
+    contents = preprocess(contents)
+    print("true author", candidate_number)
+    print("unknown text", file_number)
+    outfile = open(destination_path + 'test/' + candidate_number + '-' + file_number + '.txt', 'w')
+    outfile.write(contents)
+    outfile.close()
+
+def map_pan11_train(author, source):
+    numbers_regex = r'\d+'
+    filenames = os.listdir(source+author)
+    candidate_number = re.search(numbers_regex, author).group()
     for filename in filenames:
-        file_number = re.search(numbers_regex, filename)
-        f = open(filename, 'r')
+        file_number = re.search(numbers_regex, filename).group()
+        print("BEGIN" , author + "/" + filename)
+        f = open(source + author + "/" + filename, 'r')
         contents = f.read()
         contents = preprocess(contents)
-        outfile = open(destination_path + 'test/' + new_filename, 'w')
-        outfile.write(content)
+        outfile = open(destination_path + 'train/' + candidate_number + '-' + file_number + '.txt', 'w')
+        outfile.write(contents)
         outfile.close()
+        print("END" , author + "/" + filename)
 
 # destination_path = '../data/judgmentprocessed'
-destination_path = '../data/pan11processed/'
+destination_path = '../data/c10processed/'
 # readblogs('../data/blogs/')
-readjudgment('../data/Judgment/used/')
+# readjudgment('../data/Judgment/used/')
+readpan11('../data/c10/')

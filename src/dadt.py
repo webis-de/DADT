@@ -150,6 +150,7 @@ def train(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alp
         # i is a number between 0 and doc_length-1
         # w is a number between 0 and vocab_size-1
         for i, word in enumerate(word_indices(matrix[doc, :])):
+            print("random", i, word)
             # choose an arbitrary topic as first topic for word i
             is_atopic = np.random.binomial(1, document_atopic_dtopic_ratio[doc])
             if (is_atopic):
@@ -182,7 +183,7 @@ def train(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alp
     while taken_samples < samples:
         for doc in range(num_docs):  # all documents
             for i, word in enumerate(word_indices(matrix[doc, :])):
-
+                print("train", i, word, it)
                 old_is_atopic, old_topic = document_word_topic[(doc, i)]
 
                 if (old_is_atopic):
@@ -225,7 +226,9 @@ def train(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alp
                 pi_sampled += pi(delta_a, delta_d, num_dwords_per_doc, num_awords_per_doc)
                 taken_samples += 1
 
+        print(it)
         it += 1
+
 
     atopic_phi_sampled /= taken_samples
     atopic_theta_sampled /= taken_samples

@@ -1,6 +1,9 @@
-import numpy as np
-test_doc_authors = [0,1,2]
-author_guess = [0,1,3]
+chain_probs = []
+chains = 2
+for c in range(chains):
+    # accuracies = train_test()
+    # probs = cross_validation(2)
+    probs = [0,1,2]
+    chain_probs.append(probs)
 
-print(np.mean([1 if x==y else 0 for (x,y) in list(zip(test_doc_authors,author_guess))]))
-print(np.equal(test_doc_authors,author_guess).mean())
+print(chain_probs)

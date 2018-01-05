@@ -6,9 +6,10 @@ import math
 from multiprocessing.pool import ThreadPool
 from itertools import repeat
 
-# DIRECTORY = '../data/nichtschiller'
+# DIRECTORY = '../data/nichtschiller/'
 # DIRECTORY = '../data/blogsprocessed'
-DIRECTORY = '../data/judgmentprocessed'
+# DIRECTORY = '../data/judgmentprocessed'
+DIRECTORY = '../data/c10processed/'
 cores = 32
 
 stopwords = []
@@ -18,143 +19,35 @@ for line in stopfile:
     stopwords.append(line)
 stopfile.close()
 
-def train_test(model):
-
-    docs_content = {}
+def read_files(folder, author_ids):
+    pattern = re.compile(r'[\W_]+')
+    author_pattern = re.compile(r'(\w+)-\d+\.txt')
+    files = os.listdir(folder)
+    docs_content = []
     doc_authors = []
-    author_ids = {}  # id (int) → author name (string)
-    doc_ids = {}
+    for filename in files:
+        match = author_pattern.match(filename)
+        if not match:
+            print('No match in', filename)
+            continue
 
-    test_docs_content = {}
-    test_doc_authors = []
-    test_author_ids = {}  # id (int) → author name (string)
-    test_doc_ids = {}
+        author = match.group(1)
 
-    test_docs_content = {}
-    test_doc_authors = []
-    test_author_ids = {}  # id (int) → author name (string)
-    test_doc_ids = {}
+        if author not in author_ids:
+            author_id = len(author_ids)
+            author_ids[author] = author_id
+        else:
+            author_id = author_ids[author]
 
-    pattern = re.compile(r'[\W_]+')
-    author_pattern = re.compile(r'(\w+)-\d+\.txt')
+        with open(folder + filename) as f:
+            content = []
+            for line in f:
+                words = [pattern.sub('', w.lower()) for w in line.split()]
+                content.extend(words)
+            docs_content.append(content)
+            doc_authors.append([author_id])
 
-    next_author_id = 0
-    doc_id = 0
-    next_test_doc_id = 0
-
-    for root, dirs, files in os.walk(DIRECTORY):
-        isTest = not (len(dirs) and dirs[-1] == "test")
-        for filename in files:
-            match = author_pattern.match(filename)
-            if not match:
-                print('No match')
-                continue
-
-            if isTest:
-                author = match.group(1)
-                if author not in author_ids.values():
-                    author_id = next_author_id
-                    author_ids[author_id] = author
-                    next_author_id += 1
-                else:
-                    author_id = [key for key, value in author_ids.items() if value == author][0]
-
-                with open(root + '/' + filename) as f:
-                    content = []
-                    for line in f:
-                        words = [pattern.sub('', w.lower()) for w in line.split()]
-                        content.extend(words)
-                    test_doc_ids[next_test_doc_id] = filename
-                    test_docs_content[next_test_doc_id] = content
-                    test_doc_authors.append(author_id)
-                    next_test_doc_id += 1
-
-            else:
-                authors = match.group(1).split("-")
-                doc_author_ids = []
-                for author in authors:
-                    if author not in author_ids.values():
-                        author_id = next_author_id
-                        author_ids[author_id] = author
-                        next_author_id += 1
-                    else:
-                        author_id = [key for key, value in author_ids.items() if value == author][0]
-                    doc_author_ids.append(author_id)
-
-                with open(root + '/' + filename) as f:
-                    content = []
-                    for line in f:
-                        words = [pattern.sub('', w.lower()) for w in line.split()]
-                        content.extend(words)
-                    doc_ids[doc_id] = filename
-                    docs_content[doc_id] = content
-                    doc_authors.append(doc_author_ids)
-                    doc_id += 1
-
-    (matrix, test_matrix, n_authors, vocab) = preprocess(docs_content, test_docs_content, author_ids)
-
-    author_probs = model(matrix, test_matrix, n_authors, vocab, stopwords, doc_authors)
-
-    authors = np.argmax(author_probs, axis = 1)
-
-    accuracy=np.equal(test_doc_authors,authors).mean()
-
-    print(accuracy)
-
-def cross_preprocess():
-    print("CROSS PREPROCESS")
-    docs_content = {}
-    doc_authors = [] #doc_id (int) → author_id (int)
-    author_ids = {}  # id (int) → author name (string)
-    doc_ids = {} # id (int) → document name (string)
-    author_docs = {} # author id (int) -> set of doc ids
-
-    pattern = re.compile(r'[\W_]+')
-    author_pattern = re.compile(r'(\w+)-\d+\.txt')
-
-    next_author_id = 0
-    doc_id = 0
-    next_test_doc_id = 0
-
-    for root, dirs, files in os.walk(DIRECTORY):
-        for filename in files:
-            print(doc_id)
-            match = author_pattern.match(filename)
-            if not match:
-                print('No match', filename)
-                continue
-            else:
-                authors = match.group(1).split("-")
-                doc_author_ids = []
-                for author in authors:
-                    if author not in author_ids.values():
-                        author_id = next_author_id
-                        author_ids[author_id] = author
-                        next_author_id += 1
-                    else:
-                        author_id = [key for key, value in author_ids.items() if value == author][0]
-                    doc_author_ids.append(author_id)
-
-                with open(root + '/' + filename) as f:
-                    content = []
-                    for line in f:
-                        words = [pattern.sub('', w.lower()) for w in line.split()]
-                        content.extend(words)
-                    doc_ids[doc_id] = filename
-                    docs_content[doc_id] = content
-                    doc_authors.append(doc_author_ids)
-                    if len(doc_authors[doc_id]) > 1:
-                        print("multiple authors", doc_authors[doc_id], filename)
-                    else:
-                        author = doc_authors[doc_id][0]
-                        if author not in author_docs:
-                            author_docs[author] = set()
-                        author_docs[author].add(doc_id)
-                    doc_id += 1
-
-    print("END CROSS PREPROCESS")
-
-    return (docs_content, doc_authors, author_docs, doc_ids, author_ids)
+    return docs_content, doc_authors, author_ids
 
 def cross_validation(n, models, docs_content, doc_authors, author_docs, _):
     print("CROSS VALIDATION", n)
@@ -211,13 +104,10 @@ def fold_map_function(i, models, author_ids, author_splits, docs_content, doc_au
                     train_doc_authors.append(doc_authors[doc_id])
                     train_docs_num += 1
 
-    (matrix, test_matrix, n_authors, vocab) = preprocess(train_docs_content, test_docs_content, author_ids)
+    (matrix, test_matrix, n_authors, vocab) = build_data(train_docs_content, test_docs_content, author_ids)
 
-    with ThreadPool(cores) as p:
-        author_probs_list = p.starmap(model_help_function, zip(models, repeat(matrix), repeat(test_matrix), repeat(n_authors), repeat(train_doc_authors), repeat(vocab), repeat(stopwords)))
+    author_probs_dict = model_map(models, matrix, test_matrix, n_authors, train_doc_authors, vocab, stopwords)
 
-
-    author_probs_dict = {models[i].__name__: content for i, content in enumerate(author_probs_list)}
     real_authors = {}
     for model in models:
         real_authors[model.__name__] = {}
@@ -228,20 +118,26 @@ def fold_map_function(i, models, author_ids, author_splits, docs_content, doc_au
     print("END FOLD", i)
     return real_authors
 
+def model_map(models, matrix, test_matrix, n_authors, train_doc_authors, vocab, stopwords, _):
+    with ThreadPool(cores) as p:
+        author_probs_list = p.starmap(model_help_function, zip(models, repeat(matrix), repeat(test_matrix), repeat(n_authors), repeat(train_doc_authors), repeat(vocab), repeat(stopwords)))
+    author_probs_dict = {models[i].__name__: content for i, content in enumerate(author_probs_list)}
+    return author_probs_dict
+
 def model_help_function(model, matrix, test_matrix, n_authors, train_doc_authors, vocab, stopwords):
     return model(matrix, test_matrix, n_authors, train_doc_authors, vocab, stopwords)
 
-def preprocess(docs_content, test_docs_content, author_ids):
+def build_data(train_docs_content, test_docs_content, author_ids):
 
     print("PREPROCESS")
 
     vocab = set()
-    for doc, content in docs_content.items():
+    for doc, content in enumerate(train_docs_content):
         for word in content:
             if len(word) > 1:
                 vocab.add(word)
 
-    for doc, content in test_docs_content.items():
+    for doc, content in enumerate(test_docs_content):
         for word in content:
             if len(word) > 1:
                 vocab.add(word)
@@ -249,16 +145,16 @@ def preprocess(docs_content, test_docs_content, author_ids):
     vocab = list(vocab)
     lookupvocab = dict([(word, index) for (index, word) in enumerate(vocab)])
 
-    matrix = np.zeros((len(docs_content), len(vocab)))
+    matrix = np.zeros((len(train_docs_content), len(vocab)))
 
     test_matrix = np.zeros((len(test_docs_content), len(vocab)))
 
-    for doc, content in docs_content.items():
+    for doc, content in enumerate(train_docs_content):
         for word in content:
             if len(word) > 1:
                 matrix[doc, lookupvocab[word]] += 1
 
-    for doc, content in test_docs_content.items():
+    for doc, content in enumerate(test_docs_content):
         for word in content:
             if len(word) > 1:
                 test_matrix[doc, lookupvocab[word]] += 1
@@ -269,19 +165,21 @@ def preprocess(docs_content, test_docs_content, author_ids):
 
     return(matrix, test_matrix, n_authors, vocab)
 
-def run_chains(models, chains, n_fold, docs_content, doc_authors, author_docs):
+def run_chains(function, arguments, test_doc_authors):
+
+    print('run chains')
     doc_probabilities = 0
 
     with ThreadPool(cores) as p:
-        test_authors_list = p.starmap(cross_validation, zip(repeat(n_fold), repeat(models), repeat(docs_content), repeat(doc_authors), repeat(author_docs), range(chains)))
+        test_authors_list = p.starmap(function, arguments)
 
     for test_authors in test_authors_list:
         for model, rest in test_authors.items():
-            num_docs = len(doc_authors)
-            num_authors = len(list(test_authors[model].values())[0])
+            num_docs = len(test_doc_authors)
+            num_authors = len(rest[0])
             if np.all(doc_probabilities == 0):
                 doc_probabilities = {}
-            for doc_id, probs in test_authors[model].items():
+            for doc_id, probs in enumerate(rest):
                 if model not in doc_probabilities:
                     doc_probabilities[model] = np.zeros((num_docs, num_authors))
                 doc_probabilities[model][doc_id] += probs
@@ -289,24 +187,42 @@ def run_chains(models, chains, n_fold, docs_content, doc_authors, author_docs):
     guessed_authors = {}
     for model, rest in doc_probabilities.items():
         guessed_authors[model] =  np.argmax(rest, axis=1)
-    accuracies = {}
-    for model in models:
-        accuracies[model.__name__] = np.equal(doc_authors, guessed_authors[model.__name__]).mean()
 
+    accuracies = {}
+    for model, model_authors in guessed_authors.items():
+        accuracies[model] = np.equal(test_doc_authors, model_authors).mean()
     return accuracies
 
+def cross_main(chains, n_fold, models):
+    author_ids = {}
+    docs_content, doc_authors, author_ids = read_files(DIRECTORY, author_ids)
+    accuracies = run_chains(cross_validation, zip(repeat(models), repeat(docs_content), repeat(doc_authors), repeat(author_docs), range(chains)), doc_authors)
+    return(accuracies)
 
-results = open("results.txt", "w")
+def train_main(chains, n_fold, models):
+    print("train main")
+    author_ids = {} # schiller -> 1
+
+    train_docs_content, train_doc_authors, author_ids = read_files(DIRECTORY + 'train/', author_ids)
+    test_docs_content, test_doc_authors, author_ids = read_files(DIRECTORY + 'test/', author_ids)
+
+    (matrix, test_matrix, n_authors, vocab) = build_data(train_docs_content, test_docs_content, author_ids)
+    accuracies = run_chains(model_map, zip(repeat(models), repeat(matrix), repeat(test_matrix), repeat(n_authors), repeat(train_doc_authors), repeat(vocab), repeat(stopwords), range(chains)), test_doc_authors)
+
+    return(accuracies)
+
 chains = 4
 n_fold = 10
-# model_list = [TOKEN_SVM, LDA_SVM, AT_SVM, AT_P, AT_FA_SVM, AT_FA_P1, AT_FA_P2, DADT_SVM, DADT_P]
-model_list = [DADT_P]
 
-(docs_content, doc_authors, author_docs, doc_ids, author_ids) = cross_preprocess()
+print("hello")
 
-accuracies = run_chains(model_list, chains, n_fold, docs_content, doc_authors, author_docs)
+# models = [TOKEN_SVM, LDA_SVM, AT_SVM, AT_P, AT_FA_SVM, AT_FA_P1, AT_FA_P2, DADT_SVM, DADT_P]
+models = [DADT_P]
 
+# accuracies = cross_main(chains, n_fold, models)
+accuracies = train_main(chains, n_fold, models)
+
+results = open("results.txt", "w")
 for model, accuracy in accuracies.items():
-    results.write(str(model) + ":" + str(accuracy) + "\n")
-
+    results.write(str(model) + " : " + str(accuracy) + "\n")
 results.close()
