@@ -5,11 +5,14 @@ from models import *
 import math
 from multiprocessing.pool import ThreadPool
 from itertools import repeat
+import yappi
 
 # DIRECTORY = '../data/nichtschiller/'
-# DIRECTORY = '../data/blogsprocessed'
-# DIRECTORY = '../data/judgmentprocessed'
-DIRECTORY = '../data/c10processed/'
+# DIRECTORY = '../data/blogsprocessed/'
+# DIRECTORY = '../data/judgmentprocessed/'
+# DIRECTORY = '../data/c10processed/'
+# DIRECTORY = '../data/pan11processed/'
+DIRECTORY = '../data/pan12processed-tiny/'
 cores = 32
 
 stopwords = []
@@ -49,22 +52,22 @@ def read_files(folder, author_ids):
 
     return docs_content, doc_authors, author_ids
 
-def cross_validation(n, models, docs_content, doc_authors, author_docs, _):
+def cross_validation(n, models, docs_content, doc_authors, _):
     print("CROSS VALIDATION", n)
-    author_docs_local = copy.deepcopy(author_docs)
+    author_docs = [set([doc for doc, author in enumerate(doc_authors) if author == a]) for a in sorted(set(doc_authors))]
     author_splits = {}
 
     for author in range(len(author_ids)):
-        sample_size =  len(author_docs_local[author])//n
-        rest = len(author_docs_local[author]) % n
+        sample_size =  len(author_docs[author])//n
+        rest = len(author_docs[author]) % n
         for i in range(n):
             if i == 0:
                 author_splits[author] = []
             actual_size = sample_size
             if i < rest:
                 actual_size += 1
-            sample = set(random.sample(author_docs_local[author], actual_size))
-            author_docs_local[author] -= sample
+            sample = set(random.sample(author_docs[author], actual_size))
+            author_docs[author] -= sample
             author_splits[author].append(sample)
 
     numbers = list(range(n))
@@ -81,9 +84,10 @@ def cross_validation(n, models, docs_content, doc_authors, author_docs, _):
 
     print("END CROSS VALIDATION")
 
-    return test_authors
+    return test_authors, STAT_OBJS
 
 def fold_map_function(i, models, author_ids, author_splits, docs_content, doc_authors):
+
     print("FOLD", i)
     train_docs_content = {}
     test_docs_content = {}
@@ -125,7 +129,9 @@ def model_map(models, matrix, test_matrix, n_authors, train_doc_authors, vocab, 
     return author_probs_dict
 
 def model_help_function(model, matrix, test_matrix, n_authors, train_doc_authors, vocab, stopwords):
-    return model(matrix, test_matrix, n_authors, train_doc_authors, vocab, stopwords)
+    result = model(matrix, test_matrix, n_authors, train_doc_authors, vocab, stopwords)
+
+    return result
 
 def build_data(train_docs_content, test_docs_content, author_ids):
 
@@ -190,13 +196,14 @@ def run_chains(function, arguments, test_doc_authors):
 
     accuracies = {}
     for model, model_authors in guessed_authors.items():
-        accuracies[model] = np.equal(test_doc_authors, model_authors).mean()
+        print(test_doc_authors, model_authors)
+        accuracies[model] = np.equal(np.transpose(test_doc_authors), model_authors).mean()
     return accuracies
 
 def cross_main(chains, n_fold, models):
     author_ids = {}
     docs_content, doc_authors, author_ids = read_files(DIRECTORY, author_ids)
-    accuracies = run_chains(cross_validation, zip(repeat(models), repeat(docs_content), repeat(doc_authors), repeat(author_docs), range(chains)), doc_authors)
+    accuracies = run_chains(cross_validation, zip(repeat(models), repeat(docs_content), repeat(doc_authors), range(chains)), doc_authors)
     return(accuracies)
 
 def train_main(chains, n_fold, models):
@@ -213,16 +220,23 @@ def train_main(chains, n_fold, models):
 
 chains = 4
 n_fold = 10
-
-print("hello")
-
-# models = [TOKEN_SVM, LDA_SVM, AT_SVM, AT_P, AT_FA_SVM, AT_FA_P1, AT_FA_P2, DADT_SVM, DADT_P]
 models = [DADT_P]
+# models = [TOKEN_SVM, LDA_SVM, AT_SVM, AT_P, AT_FA_SVM, AT_FA_P1, AT_FA_P2, DADT_SVM, DADT_P]
+
 
 # accuracies = cross_main(chains, n_fold, models)
+yappi.start()
+
 accuracies = train_main(chains, n_fold, models)
 
-results = open("results.txt", "w")
+yappi.stop()
+yappi.get_func_stats().print_all()
+
+
+dir_re = re.compile(r'.*\/data\/(.*?)\/')
+match = dir_re.match(DIRECTORY)
+dir_name = match.group(1)
+results = open("results_" + dir_name + "_" + "-".join([x.__name__ for x in models]) + ".txt", "w")
 for model, accuracy in accuracies.items():
     results.write(str(model) + " : " + str(accuracy) + "\n")
 results.close()

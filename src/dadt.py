@@ -12,22 +12,22 @@ def word_indices(vec):
             yield idx
 
 
-def dtopic_distribution(cooccurrenceence_dtopic_word, cooccurrenceence_doc_dtopic, alpha, beta):
-    phi = cooccurrenceence_dtopic_word + beta
+def dtopic_distribution(cooccurrence_dtopic_word, cooccurrence_doc_dtopic, alpha, beta):
+    phi = cooccurrence_dtopic_word + beta
     phi /= np.sum(phi, axis=1)[:, np.newaxis]
 
-    theta = cooccurrenceence_doc_dtopic + alpha
+    theta = cooccurrence_doc_dtopic + alpha
     theta /= np.sum(theta, axis=1)[:, np.newaxis]
 
     return phi, theta
 
-def atopic_distribution(cooccurrenceence_atopic_word, cooccurrenceence_author_atopic, alpha, beta):
+def atopic_distribution(cooccurrence_atopic_word, cooccurrence_author_atopic, alpha, beta):
     # word topic distribution
-    phi = cooccurrenceence_atopic_word + beta
+    phi = cooccurrence_atopic_word + beta
     phi /= np.sum(phi, axis=1)[:, np.newaxis]
 
     # author topic distribution
-    theta = cooccurrenceence_author_atopic + alpha
+    theta = cooccurrence_author_atopic + alpha
     theta /= np.sum(theta, axis=1)[:, np.newaxis]
 
     return phi, theta
@@ -69,13 +69,13 @@ def chi(eta, doc_authors,num_authors):
 def sample_topic(doc, word, num_dtopics, doc_authors, cooccurrence_atopic_word, occurrence_atopic, cooccurrence_author_atopic, occurrence_author, num_atopics, num_awords_per_doc, cooccurrence_dtopic_word, occurrence_dtopic, cooccurrence_doc_dtopic, num_dwords_per_doc, alpha_a, beta_a, delta_a, alpha_d, beta_d, delta_d):
     authors = doc_authors[doc]
 
-    vocab_size = cooccurrence_dtopic_word.shape[1]
+    vocab_size_d = cooccurrence_dtopic_word.shape[1]
 
     document_dtopics = (cooccurrence_doc_dtopic[doc, :] + alpha_d) / \
                       (num_dwords_per_doc[doc] + alpha_d * num_dtopics)
 
     word_dtopics = (cooccurrence_dtopic_word[:, word] + beta_d[word]) / \
-                  (occurrence_dtopic + beta_d[word] * vocab_size)
+                  (occurrence_dtopic + beta_d[word] * vocab_size_d)
 
     distribution_d = (delta_d + num_dwords_per_doc[doc]) * document_dtopics * word_dtopics
 
@@ -89,11 +89,11 @@ def sample_topic(doc, word, num_dtopics, doc_authors, cooccurrence_atopic_word, 
         except:
             distribution_d = distribution_d * 0.999999999999999  # dirty hack because of floating point errors
 
-    vocab_size = cooccurrence_atopic_word.shape[1]
+    vocab_size_a = cooccurrence_atopic_word.shape[1]
 
     author_atopics = (cooccurrence_author_atopic[authors, :] + alpha_a) / (occurrence_author[authors].repeat(num_atopics).reshape(len(authors), num_atopics) + alpha_a * num_atopics)
 
-    word_atopics = (cooccurrence_atopic_word[:, word] + beta_d[word]) / (occurrence_atopic + beta_d[word] * vocab_size)
+    word_atopics = (cooccurrence_atopic_word[:, word] + beta_d[word]) / (occurrence_atopic + beta_d[word] * vocab_size_a)
 
     distribution_a = (delta_a + num_awords_per_doc[doc]) * author_atopics * word_atopics
 
@@ -150,7 +150,6 @@ def train(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alp
         # i is a number between 0 and doc_length-1
         # w is a number between 0 and vocab_size-1
         for i, word in enumerate(word_indices(matrix[doc, :])):
-            print("random", i, word)
             # choose an arbitrary topic as first topic for word i
             is_atopic = np.random.binomial(1, document_atopic_dtopic_ratio[doc])
             if (is_atopic):
@@ -181,9 +180,9 @@ def train(matrix, vocab, doc_authors, num_dtopics, num_atopics, num_authors, alp
     pi_sampled = 0
 
     while taken_samples < samples:
+        print("train", it)
         for doc in range(num_docs):  # all documents
             for i, word in enumerate(word_indices(matrix[doc, :])):
-                print("train", i, word, it)
                 old_is_atopic, old_topic = document_word_topic[(doc, i)]
 
                 if (old_is_atopic):
@@ -288,10 +287,10 @@ def classify(matrix, burn_in, samples, spacing, num_dtopics, num_atopics, alpha_
     pi_sampled = 0
 
     while taken_samples < samples:
+        print("classify", it)
         for doc in range(num_docs):  # all documents
             fic_author = doc
             for i, word in enumerate(word_indices(matrix[doc, :])):
-
                 old_is_atopic, old_topic = document_word_topic[(doc, i)]
 
                 if (old_is_atopic):
@@ -379,6 +378,7 @@ def dadt_p(matrix, n_authors, phi_a, phi_d, theta_a, theta_d_test, pi_test, chi)
     n_docs, vocab_size = matrix.shape
     candidate_probabilities = np.zeros((n_docs, n_authors))
     for doc in range(n_docs):  # all documents
+        print("deciding", doc)
         for candidate in range(n_authors):
             text_prob = 0
             for i, word in enumerate(word_indices(matrix[doc, :])):

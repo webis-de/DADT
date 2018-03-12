@@ -10,14 +10,19 @@ import json
 from itertools import repeat
 
 class OpenNLP():
-    def __init__(self, tool, path_opennlp, path_model):
-        self.tool = tool
-        self.path_opennlp = path_opennlp
-        self.path_model = path_model
+    def __init__(self, tool, opennlp_dir, path_model):
+        jars = subprocess.check_output(['bash', '-c' , 'echo ' + opennlp_dir + '/lib/*.jar ' + opennlp_dir + "/output/*.jar | tr ' ' ':'"]).decode(encoding="utf-8").strip()
+        cp = opennlp_dir + "/output/classes:" + jars
+        java = subprocess.check_output(['bash', '-c', 'echo $JAVA_HOME']).decode(encoding="utf-8").strip() + "/bin/java"
+
+        self.command = [java,"-Xmx1000m","-classpath",cp,"-Dopennlp.dir=" + opennlp_dir, tool, path_model]
+
+
+
         # spawn the process
 
     def parse(self, text):
-        self.process = subprocess.Popen([self.path_opennlp, self.tool, self.path_model], stdout = subprocess.PIPE, stdin = subprocess.PIPE, stderr = subprocess.PIPE)
+        self.process = subprocess.Popen(self.command, stdout = subprocess.PIPE, stdin = subprocess.PIPE, stderr = subprocess.PIPE)
         response = self.process.communicate(input=((text).encode()))
         self.process.wait()
         # print(response)
@@ -26,8 +31,8 @@ class OpenNLP():
         return sentences
 
 def preprocess(content):
-    sent_parser = OpenNLP("SentenceDetector", "../apache-opennlp-1.8.3/bin/opennlp", "models/en-sent.bin")
-    token_parser = OpenNLP("TokenizerME", "../apache-opennlp-1.8.3/bin/opennlp", "models/en-token.bin")
+    sent_parser = OpenNLP("opennlp.tools.lang.english.SentenceDetector", "../opennlp-tools-1.4.3", "../opennlp-models/EnglishSD.bin.gz")
+    token_parser = OpenNLP("opennlp.tools.lang.english.Tokenizer", "../opennlp-tools-1.4.3", "../opennlp-models/EnglishTok.bin.gz")
 
     content = unidecode(content)
     content = content.strip()
@@ -114,14 +119,14 @@ def readpan11(source_path):
     with Pool(32) as p:
         p.starmap(map_pan11_train, zip(list(filenames), repeat(source_path+'training/')))
 
-    # ground_file = open(source_path + 'ground-truth.json','r')
-    # ground_string = ground_file.read()
-    # ground_file.close()
-    # ground_json = json.loads(ground_string)
-    # ground_dict = ground_json['ground-truth']
+    ground_file = open(source_path + 'ground-truth.json','r')
+    ground_string = ground_file.read()
+    ground_file.close()
+    ground_json = json.loads(ground_string)
+    ground_dict = ground_json['ground-truth']
 
-    # with Pool(32) as p:
-    #     p.starmap(map_pan11_test, zip(ground_dict, repeat(source_path)))
+    with Pool(32) as p:
+        p.starmap(map_pan11_test, zip(ground_dict, repeat(source_path)))
 
 def map_pan11_test(info, source_path):
     numbers_regex = r'\d+'
@@ -155,7 +160,8 @@ def map_pan11_train(author, source):
         print("END" , author + "/" + filename)
 
 # destination_path = '../data/judgmentprocessed'
-destination_path = '../data/c10processed/'
+destination_path = '../data/pan11processed_new/'
 # readblogs('../data/blogs/')
 # readjudgment('../data/Judgment/used/')
-readpan11('../data/c10/')
+# readpan11('../data/c10/')
+readpan11('../data/pan11/')
