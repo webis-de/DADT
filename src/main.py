@@ -5,14 +5,14 @@ from models import *
 import math
 from multiprocessing.pool import ThreadPool
 from itertools import repeat
-import yappi
+# import yappi
 
 # DIRECTORY = '../data/nichtschiller/'
 # DIRECTORY = '../data/blogsprocessed/'
 # DIRECTORY = '../data/judgmentprocessed/'
 # DIRECTORY = '../data/c10processed/'
-# DIRECTORY = '../data/pan11processed/'
-DIRECTORY = '../data/pan12processed-tiny/'
+DIRECTORY = '../data/pan11processed/'
+# DIRECTORY = '../data/pan12processed-tiny/'
 cores = 32
 
 stopwords = []
@@ -225,18 +225,18 @@ models = [DADT_P]
 
 
 # accuracies = cross_main(chains, n_fold, models)
-yappi.start()
-
+# yappi.start()
+#
 accuracies = train_main(chains, n_fold, models)
-
-yappi.stop()
-yappi.get_func_stats().print_all()
+#
+# yappi.stop()
+# yappi.get_func_stats().print_all()
 
 
 dir_re = re.compile(r'.*\/data\/(.*?)\/')
 match = dir_re.match(DIRECTORY)
 dir_name = match.group(1)
-results = open("results_" + dir_name + "_" + "-".join([x.__name__ for x in models]) + ".txt", "w")
+results = open("results_" + dir_name + "_" + "-".join([x.__name__ for x in models]) + ".txt", "a")
 for model, accuracy in accuracies.items():
     results.write(str(model) + " : " + str(accuracy) + "\n")
 results.close()

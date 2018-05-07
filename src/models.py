@@ -9,6 +9,9 @@ import sys, os
 sys.path.append(os.path.abspath("liblinear/python"))
 import liblinearutil as ll
 
+a = "a"
+d = "d"
+
 def concatenate_fic_authors(doc_authors, num_topics):
     num_training_docs = len(doc_authors)
     training_matrix = np.zeros((num_training_docs, num_topics * 2))
@@ -299,17 +302,20 @@ def DADT_P(matrix, test_matrix, n_authors, doc_authors, vocab, stopwords):
     beta_a = np.array([0.01 + epsilon if word in stopwords else 0.01 for word in vocab])
     beta_d = np.array([0.01 - epsilon if word in stopwords else 0.01 for word in vocab])
 
+    alpha = {a: alpha_a, d: alpha_d}
+    beta = {a: beta_a, d: beta_d}
+    delta = {a: alpha_a, d: alpha_d}
+    num_topics = {a: num_atopics, d: num_dtopics}
+
     print('Starting!')
-    (atopic_phi_sampled, atopic_theta_sampled, dtopic_phi_sampled, dtopic_theta_sampled, pi_sampled, chi) = dadt.train(matrix, vocab, doc_authors, num_dtopics, num_atopics, n_authors, alpha_a, beta_a, alpha_d, beta_d, eta, delta_a, delta_d, burn_in, samples, spacing)
+    (theta_sampled, phi_sampled, pi_sampled, chi_sampled) = dadt.train(matrix, vocab, doc_authors, num_topics, n_authors, alpha, beta, delta, eta, burn_in, samples, spacing)
 
     print("Classifying")
 
-    (atopic_theta_test, dtopic_theta_test, pi_test ) = dadt.classify(test_matrix, test_burn_in, test_samples, test_spacing, num_dtopics, num_atopics, alpha_a, alpha_d, beta_a, beta_d, eta, delta_a, delta_d, dtopic_phi_sampled, atopic_phi_sampled)
+    (theta_test, pi_test) = dadt.classify(test_matrix, test_burn_in, test_samples, test_spacing, num_topics, alpha, beta, delta, eta, phi_sampled)
 
     print("Deciding")
-    print(test_matrix.shape)
-    print(dtopic_theta_test.shape)
 
-    author_probs = dadt.dadt_p(test_matrix, n_authors, atopic_phi_sampled, dtopic_phi_sampled, atopic_theta_sampled, dtopic_theta_test, pi_test, chi)
+    author_probs = dadt.dadt_p(test_matrix, n_authors, theta_sampled, phi_sampled, pi_test, chi_sampled)
 
     return(author_probs)
